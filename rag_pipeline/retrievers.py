@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, json, requests
+import json, requests
 from pathlib import Path
 from typing import List, Tuple
 import torch
@@ -14,24 +14,26 @@ from langchain.retrievers import BM25Retriever, EnsembleRetriever
 from langchain.storage import InMemoryStore
 from langchain.schema import Document
 from langchain.schema.messages import HumanMessage
-import config
+
+# from pdf2image import convert_from_path
+from rag_pipeline import config, utils
+import torch.nn.functional as F
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model_name = "jinaai/jina-embeddings-v3"
 
 # 기본 임베딩 모델 로드
-model = SentenceTransformer(model_name, trust_remote_code=True)
+model = SentenceTransformer(config.EMBED_MODEL_NAME, trust_remote_code=True)
 model.to(device)
 
 # LangChain용 임베딩 래퍼
 embeddings = HuggingFaceEmbeddings(
-    model_name=model_name,
+    model_name=config.EMBED_MODEL_NAME,
     model_kwargs={"device": device, "trust_remote_code": True},
     encode_kwargs={"normalize_embeddings": True},
 )
 
 # Cross-Encoder Reranker
-reranker = HuggingFaceCrossEncoder(model_name="BAAI/bge-reranker-v2-m3")
+reranker = HuggingFaceCrossEncoder(model_name=config.RERANKER_NAME)
 
 
 def load_parent_store(jsonl_path: Path) -> InMemoryStore:
@@ -60,6 +62,31 @@ def _rerank(query: str, docs: List[Document]) -> Tuple[List[Document], List[floa
     return list(docs_sorted), list(scores_sorted)
 
 
+def retrieve_from_file_embedding(
+    query: HumanMessage | str, pdf_path: Path, top_k: int = config.TOP_K
+) -> List[Document]:
+    docs = pdf_to_docs(pdf_path)
+
+    if not docs:
+        return "Failed to extract text from PDF!"
+    query_text = query.content if hasattr(query, "content") else query
+
+    texts = [d.page_content for d in docs]
+    doc_vecs = model.encode(texts, normalize_embeddings=True)
+    q_vecs = model.encode([query_text], normalize_embeddings=True)[0]
+
+    cos_sim = util.cos_sim(q_vecs, doc_vecs)[0].float().cpu().numpy()
+
+    best_idx = cos_sim.argsort()[-top_k:][::-1]
+    best_docs = [docs[i] for i in best_idx]
+    best_scores = cos_sim[best_idx]
+
+    with open(config.SCORE_PATH, "w") as f:
+        json.dump(best_scores.tolist(), f)
+
+    return best_docs
+
+
 def vectordb_retrieve(query: HumanMessage | str) -> Tuple[List[Document], str]:
     query_text = query.content if hasattr(query, "content") else query
 
@@ -69,31 +96,22 @@ def vectordb_retrieve(query: HumanMessage | str) -> Tuple[List[Document], str]:
         allow_dangerous_deserialization=True,
     )
 
-    query_emb = (
-        model.encode(
-            query_text,
-            convert_to_tensor=True,
-            normalize_embeddings=True,
-        )
-        .cpu()
-        .numpy()
+    query_emb = model.encode(
+        query_text,
+        convert_to_tensor=False,
+        normalize_embeddings=True,
     )
 
     sem = vectordb.similarity_search_by_vector(query_emb, k=config.TOP_K)
 
-    doc_vecs = (
-        model.encode(
-            [d.page_content for d in sem],
-            convert_to_tensor=True,
-            normalize_embeddings=True,
-        )
-        .float()
-        .cpu()
-        .numpy()
+    doc_vecs = model.encode(
+        [d.page_content for d in sem],
+        convert_to_tensor=False,
+        normalize_embeddings=True,
     )
 
     cos_sim = util.cos_sim(query_emb, doc_vecs)[0].float().cpu().numpy()
-    with open("save/json/path.json", "w", encoding="utf-8") as f:
+    with open(config.SAVE_PATH, "w", encoding="utf-8") as f:
         json.dump(cos_sim.tolist(), f, ensure_ascii=False)
 
     # 조건부로 reranking 적용
@@ -144,48 +162,23 @@ def summary_retrieve(query: HumanMessage | str) -> Tuple[List[Document], str]:
         allow_dangerous_deserialization=True,
     )
 
-    payload = {
-        "model": config.REMOTE_LLM_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a Semiconductor Physics Teacher AI Assistant",
-            },
-            {
-                "role": "user",
-                "content": f"[Question]:\n{query_text}\n\n[Explanation]:\n",
-            },
-        ],
-        "max_tokens": 3000,
-        "temperature": 0.5,
-        "top_p": 0.95,
-        "stream": False,
-        "n": 1,
-    }
+    payload = utils.build_payload_for_summary_generation(query_text)
+
     response = requests.post(config.REMOTE_LLM_URL, json=payload).json()
     query_explanation = response["choices"][0]["message"]["content"]
 
-    query_emb = (
-        model.encode(
-            query_explanation,
-            convert_to_tensor=True,
-            normalize_embeddings=True,
-        )
-        .cpu()
-        .numpy()
+    query_emb = model.encode(
+        query_explanation,
+        convert_to_tensor=False,
+        normalize_embeddings=True,
     )
 
     sem = vectordb.similarity_search_by_vector(query_emb, k=config.TOP_K)
 
-    doc_vecs = (
-        model.encode(
-            [d.page_content for d in sem],
-            convert_to_tensor=True,
-            normalize_embeddings=True,
-        )
-        .float()
-        .cpu()
-        .numpy()
+    doc_vecs = model.encode(
+        [d.page_content for d in sem],
+        convert_to_tensor=False,
+        normalize_embeddings=True,
     )
 
     cos_sim = util.cos_sim(query_emb, doc_vecs)[0].float().cpu().numpy()
@@ -213,24 +206,7 @@ def summary_hybrid_retrieve(
     )
 
     # LLM으로 질문 설명 생성
-    payload = {
-        "model": config.REMOTE_LLM_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a Semiconductor Physics Teacher AI Assistant",
-            },
-            {
-                "role": "user",
-                "content": f"[Question]:\n{query_text}\n\n[Explanation]:\n",
-            },
-        ],
-        "max_tokens": 3000,
-        "temperature": 0.5,
-        "top_p": 0.95,
-        "stream": False,
-        "n": 1,
-    }
+    payload = utils.build_payload_for_summary_generation(query_text)
     response = requests.post(config.REMOTE_LLM_URL, json=payload).json()
     query_explanation = response["choices"][0]["message"]["content"]
 
@@ -246,44 +222,17 @@ def summary_hybrid_retrieve(
         weights=weights,
     )
 
-    # 설명 텍스트로 검색
     sem = ensemble_retriever.get_relevant_documents(query_explanation)
 
     reranked_docs, scores = _rerank(query_explanation, sem)
-    with open("score/path.json", "w", encoding="utf-8") as f:
+    with open(config.SCORE_PATH, "w", encoding="utf-8") as f:
         json.dump([float(s) for s in scores], f, ensure_ascii=False)
     return reranked_docs, query_explanation
 
 
-# def hybrid_retrieve(query: str):
-#     """Semantic + BM25 하이브리드 검색 후 Rerank"""
-#     vectordb = FAISS.load_local(
-#         config.CONTENT_DB_PATH,
-#         embeddings=embeddings,
-#         allow_dangerous_deserialization=True,
-#     )
-#     faiss_retriever = vectordb.as_retriever(search_kwargs={"k": config.TOP_K})
-
-#     all_docs = list(vectordb.docstore._dict.values())
-#     bm25_retriever = BM25Retriever.from_documents(all_docs)
-#     bm25_retriever.k = config.TOP_K
-
-#     ensemble_retriever = EnsembleRetriever(
-#         retrievers=[faiss_retriever, bm25_retriever],
-#         weights=[0.5, 0.5],
-#     )
-
-#     sem = ensemble_retriever.get_relevant_documents(query)
-
-#     reranked_docs, scores = _rerank(query, sem)
-
-#     with open("json/path.json", "w", encoding="utf-8") as f:
-#         json.dump([float(s) for s in scores], f, ensure_ascii=False)
-
-#     return reranked_docs, query
-
-
 def hyde_retrieve(query: str):
+    query_text = query.content if hasattr(query, "content") else query
+
     vectordb = FAISS.load_local(
         config.CONTENT_DB_PATH,
         embeddings=embeddings,
@@ -294,38 +243,43 @@ def hyde_retrieve(query: str):
     hypo_docs: List[str] = []
 
     for _ in range(5):
-        payload = {...}  # HyDE용 프롬프트
+        payload = utils.build_payload_for_hyde  # HyDE용 프롬프트
         response = requests.post(config.REMOTE_LLM_URL, json=payload).json()
         hypo_doc = response["choices"][0]["message"]["content"]
         hypo_docs.append(hypo_doc)
 
         embedding = model.encode(
             hypo_doc,
-            convert_to_tensor=False,
+            convert_to_tensor=True,
             normalize_embeddings=True,
-        )
+        ).cpu()
         hydes.append(embedding)
 
-    mean_hyde = np.mean(np.stack(hydes, axis=0), axis=0)
-    norm = np.linalg.norm(mean_hyde)
-    if norm > 0:
-        mean_hyde /= norm
+    # mean_hyde = np.mean(np.stack(hydes, axis=0), axis=0)
+    # norm = np.linalg.norm(mean_hyde)
+    # if norm > 0:
+    #     mean_hyde /= norm
+    mean_hyde = torch.stack(hydes).mean(dim=0)
+    mean_hyde = F.normalize(mean_hyde, p=2, dim=0)
 
-    sem = vectordb.similarity_search_by_vector(
-        mean_hyde.astype("float32"), k=config.TOP_K
-    )
+    mean_hyde_np = mean_hyde.float().numpy()
+
+    sem = vectordb.similarity_search_by_vector(mean_hyde_np, k=config.TOP_K)
 
     sem_vecs = model.encode(
         [d.page_content for d in sem],
         convert_to_tensor=True,
         normalize_embeddings=True,
-    )
-    sem_hyde_cos_sim = util.cos_sim(mean_hyde, sem_vecs)[0].cpu().numpy()
+    ).cpu()
 
+    dtype = torch.float32
+    mean_hyde = mean_hyde.to(dtype)
+    sem_vecs = sem_vecs.to(dtype)
+    # sem_hyde_cos_sim = util.cos_sim(mean_hyde, sem_vecs)[0].cpu().numpy()
+    sem_hyde_cos_sim = util.cos_sim(mean_hyde.unsqueeze(0), sem_vecs)[0].numpy()
     with open("hyde_sim.json", "w", encoding="utf-8") as f:
         json.dump(sem_hyde_cos_sim.tolist(), f, ensure_ascii=False)
 
-    # 조건부로 reranking 적용
     if config.RERANK:
         query_text = query
         reranked_docs, scores = _rerank(query_text, sem)
@@ -351,21 +305,7 @@ def hyde_hybrid_retrieve(
 
     # HyDE 문서 생성
     for _ in range(5):
-        payload = {
-            "model": config.REMOTE_LLM_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a helpful expert in semiconductor physics.",
-                },
-                {
-                    "role": "user",
-                    "content": f"Generate a detailed document that would contain the answer to this question: {query_text}",
-                },
-            ],
-            "temperature": 0.7,
-            "max_tokens": 500,
-        }
+        payload = utils.buld_payload_for_hyde(query_text)
         response = requests.post(config.REMOTE_LLM_URL, json=payload).json()
         hypo_doc = response["choices"][0]["message"]["content"]
         hypo_docs.append(hypo_doc)

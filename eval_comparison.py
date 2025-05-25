@@ -8,13 +8,11 @@ from tqdm import tqdm
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import torch
-from evaluation import math_grader, science_grader
-import config
+from evaluation.eval_utils import math_grader, science_grader
+from rag_pipeline import config
+from evaluation.eval_vectordb import load_dataset, extract_box_content
 
-# Import existing functions
-from eval_vectordb import load_dataset, extract_box_content
-
-INPUT_PATH = Path("./eval_neamen.jsonl")
+INPUT_PATH = Path("./evaluation/eval_utils/eval_neamen.jsonl")
 OUTPUT_DIR = Path("./eval_output")
 RESULTS_PATH = OUTPUT_DIR / "comparison_results.json"
 LOG_PATH = OUTPUT_DIR / "comparison_log.txt"
@@ -39,9 +37,9 @@ def log_message(message: str):
 
 def update_config(top_k: int, sim_threshold: float, rerank: bool):
     """Update config.py file with new values"""
-    config.TOP_K = top_k
-    config.SIM_THRESHOLD = sim_threshold
-    config.RERANK = rerank
+    os.environ["TOP_K"] = str(top_k)
+    os.environ["SIM_THRESHOLD"] = str(sim_threshold)
+    os.environ["RERANK"] = str(rerank)
 
     # Force reload any modules that might have imported config
     importlib.reload(config)
@@ -113,6 +111,9 @@ def run_evaluation(
                 {
                     "id": record["id"],
                     "problem": record["problem"],
+                    "explanation": graph_state["explanation"],
+                    "context": graph_state["context"],
+                    "score": graph_state["score"],
                     "predicted_answer": predicted_answer,
                     "gt_answer": gt_answer,
                     "answer_correct": answer_correct_str,
@@ -173,15 +174,6 @@ def main():
                             log_message(
                                 f"\n--- Combination {current_combination}/{total_combinations} ---"
                             )
-
-                            # Don't use hybrid weights with standard retrieval
-                            # Only use hybrid weights with query_type or when query_type is None
-                            if query_type is None and hybrid_weights != [0.5, 0.5]:
-                                log_message(
-                                    "Skipping non-standard hybrid weights with standard retrieval"
-                                )
-                                continue
-
                             # Run evaluation for current configuration
                             config_name = f"type={query_type}_weights={hybrid_weights}_k={top_k}_sim={sim_threshold}_rerank={rerank}"
                             log_message(f"Testing configuration: {config_name}")

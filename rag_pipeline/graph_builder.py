@@ -3,13 +3,15 @@ from pathlib import Path
 from langgraph.graph import StateGraph
 from rag_pipeline.graph_state import GraphState
 from rag_pipeline import nodes
+from typing import List
+
 
 # from langgraph.checkpoint.memory import MemorySaver
 
 
 def build_graph(
     pdf_path: Path | None = None,
-    query_type: str | None = None,
+    retrieval_type: str | None = None,
     hybrid_weights: List[float] | None = None,
 ):
     g = StateGraph(GraphState)
@@ -23,13 +25,13 @@ def build_graph(
         g.add_node(
             "retrieve", lambda s: nodes.node_retrieve_file_embedding(s, pdf_path)
         )
-    elif query_type == "hyde" and hybrid_weights:
+    elif retrieval_type == "hyde" and hybrid_weights:
         g.add_node("retrieve", nodes.node_retrieve_hyde_hybrid)
-    elif query_type == "hyde":
+    elif retrieval_type == "hyde":
         g.add_node("retrieve", nodes.node_retrieve_hyde)
-    elif query_type == "summary" and hybrid_weights:
+    elif retrieval_type == "summary" and hybrid_weights:
         g.add_node("retrieve", nodes.node_retrieve_summary_hybrid)
-    elif query_type == "summary":
+    elif retrieval_type == "summary":
         g.add_node("retrieve", nodes.node_retrieve_summary)
     elif hybrid_weights:
         g.add_node("retrieve", nodes.node_retrieve_hybrid)

@@ -1,10 +1,15 @@
 from __future__ import annotations
-
 import json
 import requests
 from typing import List
 from rag_pipeline.graph_state import GraphState
-from rag_pipeline import retrievers, config
+from rag_pipeline import retrievers, config, utils
+
+
+def node_retrieve_file_embedding(state: GraphState, pdf_path: str) -> GraphState:
+    query = state["question"][-1]
+    context = retrievers.retrieve_from_file_embedding(query, pdf_path)
+    return {"context": context}
 
 
 def node_retrieve(state: GraphState) -> GraphState:
@@ -62,6 +67,7 @@ def node_retrieve_hyde_hybrid(state: GraphState) -> GraphState:
 def node_relevance_check(state: GraphState) -> GraphState:
     with open("score/path.json", "r", encoding="utf-8") as f:
         scores: List[float] = json.load(f)
+        print(scores)
 
     context_docs = state["context"]  # List[Document]
     contents = [d.page_content for d in context_docs]
@@ -74,33 +80,23 @@ def node_relevance_check(state: GraphState) -> GraphState:
             filtered_scores.append(score)
             filtered_context.append(contents[i])
 
-    return {"context": filtered_context, "score": filtered_scores}
+    return {
+        "filtered_context": filtered_context,
+        "scores": scores,
+        "filtered_scores": filtered_scores,
+    }
 
 
 def node_llm_answer(state: GraphState) -> GraphState:
     query: str = state["question"][-1]
-    context: str | List[str] = state["context"]
 
-    # 컨텍스트가 리스트면 문자열로 합침
-    if isinstance(context, list):
-        context_str = "\n\n---\n\n".join(context)
-    else:
-        context_str = context
+    context_docs = state["context"]
+    contents = [d.page_content for d in context_docs]
+    context_str = "\n\n---\n\n".join(contents)
 
-    payload = {
-        "model": config.REMOTE_LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": "You are an AI assistant."},
-            {
-                "role": "user",
-                "content": f"[Question]\n{query}\n\n[Context]\n{context_str}",
-            },
-        ],
-        "max_tokens": 512,
-        "temperature": 0.3,
-    }
+    payload = utils.build_payload_for_llm_answer(query, context_str)
 
-    res = requests.post(config.REMOTE_LLM_URL, json=payload, timeout=60).json()
+    res = requests.post(config.REMOTE_LLM_URL, json=payload).json()
     answer = res["choices"][0]["message"]["content"].strip()
     if not isinstance(answer, str):
         answer = str(answer)
