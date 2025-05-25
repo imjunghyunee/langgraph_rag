@@ -9,9 +9,17 @@ import json
 import torch
 import logging
 import numpy as np
+import shutil
+from pathlib import Path
 from typing import List, Tuple, Dict
 from sentence_transformers import SentenceTransformer, losses, InputExample
 from torch.utils.data import DataLoader
+
+# 1) Hugging Face Hub 다운로드 설정 ------------------------------
+# 진행-바를 보이게 하고(hf_transfer까지) 다운로드 안정성 강화
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"  # 0 = 진행-바 활성
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"  # 1 = hf_transfer 사용
+
 
 # 로깅 설정 - 학습 진행 상황을 콘솔에 출력합니다
 logging.basicConfig(
@@ -19,10 +27,39 @@ logging.basicConfig(
 )
 
 
+def clear_huggingface_cache(model_name=None):
+    """특정 모델 또는 전체 허깅페이스 캐시를 삭제합니다"""
+    cache_root = Path.home() / ".cache" / "huggingface"
+
+    if model_name:
+        # 특정 모델 캐시만 삭제
+        dirs_to_check = [
+            cache_root / "modules" / "transformers_modules",
+            cache_root / "hub",
+        ]
+
+        for dir_path in dirs_to_check:
+            if dir_path.exists():
+                for path in dir_path.glob(f"**/{model_name}*"):
+                    if path.is_dir():
+                        logging.info(f"삭제 중: {path}")
+                        shutil.rmtree(path, ignore_errors=True)
+
+        logging.info(f"{model_name} 관련 캐시가 삭제되었습니다.")
+    else:
+        # 전체 캐시 삭제 (위험하므로 주의)
+        logging.warning(
+            "전체 허깅페이스 캐시를 삭제합니다. 이 작업은 시간이 걸릴 수 있습니다."
+        )
+        if cache_root.exists():
+            shutil.rmtree(cache_root, ignore_errors=True)
+        logging.info("허깅페이스 캐시가 삭제되었습니다.")
+
+
 def main():
     # 1. 데이터 파일 경로 설정
-    data_path = "my/pair/data.json"
-    output_path = "finetuned/model/path"
+    data_path = "./pair_data.json"
+    output_path = "./ckpt"
 
     # 2. 모델 로드 - jinaai/jina-embeddings-v3 모델을 불러옵니다
     # trust_remote_code=True는 온라인에서 모델 코드를 신뢰하고 실행하도록 설정합니다
@@ -43,7 +80,7 @@ def main():
     # batch_size=32는 한 번에 32개의 예제를 처리합니다
     # 각 배치에서는 32개의 질문-문서 쌍이 있고,
     # 각 질문에 대해 1개의 양성(positive) 문서와 31개의 음성(negative) 문서가 자동으로 생성됩니다
-    batch_size = 32
+    batch_size = 16  # 32
     train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=batch_size)
     logging.info(f"배치 크기: {batch_size}, 총 배치 수: {len(train_dataloader)}")
 
@@ -54,7 +91,7 @@ def main():
     # 6. 학습 설정
     # warmup_steps는 학습률이 점진적으로 증가하는 단계 수입니다
     # 전체 단계의 10%를 워밍업으로 사용하는 것이 일반적입니다
-    num_epochs = 3  # 전체 데이터셋을 3번 반복합니다
+    num_epochs = 1  # 3  # 전체 데이터셋을 3번 반복합니다
     warmup_steps = int(len(train_dataloader) * num_epochs * 0.1)
     logging.info(f"총 에폭: {num_epochs}, 워밍업 단계: {warmup_steps}")
 

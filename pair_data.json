@@ -1,0 +1,34 @@
+[
+    {
+        "question": "Calculate the first three energy levels of an electron in an infinite potential well. Consider an electron in an infinite potential well of width 5 Å.",
+        "text": "The time-independent Schrödinger equation for a particle in a box of width $a$ with infinite potential barriers at $x=0$ and $x=a$ is: \n\n\\[ -\\frac{\\hbar^2}{2m} \\frac{d^2\\psi(x)}{dx^2} = E \\psi(x) \\]\n\nThe boundary conditions require $\\psi(0)=\\psi(a)=0$, and the allowed energy levels are given by:\n\n\\[ E_n = \\frac{n^2\\pi^2\\hbar^2}{2ma^2} \\]\n\nSubstituting $a=5$ Å and $m$ as the electron mass, one can calculate $E_1, E_2, E_3$ as demonstrated in the example."
+    },
+    {
+        "question": "Calculate the penetration depth of a particle impinging on a potential barrier. Consider an incident electron that is traveling at a velocity of $1 \\times 10^5$ m/s in region I.",
+        "text": "For a potential barrier where the potential energy $V_0$ is greater than the particle energy $E$, the wave function decays exponentially inside the barrier. The characteristic penetration depth $d$ where the wave function drops to $e^{-1}$ is:\n\n\\[ d = \\frac{\\hbar}{\\sqrt{2m(V_0-E)}} \\]\n\nThe calculation in the example uses the electron mass and the given kinetic energy to find $d \\approx 11.6$ Å, which is roughly two lattice constants of silicon."
+    },
+    {
+        "question": "Determine the number (per $\\mathrm{cm}^3$) of quantum states in silicon between $E_c$ and $E_c + kT$ at $T = 300 \\mathrm{K}$. ",
+        "text": "The density of quantum states in the conduction band of a semiconductor is given by:\n\n\\[ N = \\int_{E_c}^{E_c+kT} g_c(E) dE \\]\n\nwhere \n\\[ g_c(E) = \\frac{4\\pi(2m_n^*)^{3/2}}{h^3} (E-E_c)^{1/2} \\]\n\nIntegrating over the specified energy range gives the number of states per unit volume. This allows for estimation of the order of magnitude of available quantum states at thermal energies."
+    },
+    {
+        "question": "Determine the energy at which the Boltzmann approximation may be considered valid. Calculate the energy, in terms of $kT$ and $E_F$, at which the difference between the Boltzmann approximation and the Fermi–Dirac function is $5\\%$ of the Fermi function.",
+        "text": "The Fermi–Dirac probability function is:\n\n\\[ f_F(E) = \\frac{1}{1 + \\exp[(E-E_F)/kT]} \\]\n\nThe Boltzmann approximation is valid when $E - E_F \\gg kT$, so:\n\n\\[ f_F(E) \\approx \\exp\\left(-\\frac{E-E_F}{kT}\\right) \\]\n\nThe difference is $5\\%$ of the Fermi function when $E-E_F = 3kT$, i.e., for energies greater than three times the thermal energy above the Fermi level, the approximation holds within $5\\%$ error."
+    },
+    {
+        "question": "Calculate the thermal equilibrium concentrations of electrons and holes for a given Fermi energy. Consider silicon at $T = 300$ K so that $N_c = 2.8 \\times 10^{19}\\ \\mathrm{cm}^{-3}$ and $N_v = 1.04 \\times 10^{19}\\ \\mathrm{cm}^{-3}$. Assume that the Fermi energy is $0.25$ eV below the conduction band. If we assume that the bandgap energy of silicon is $1.12$ eV, then the Fermi energy will be $0.87$ eV above the valence band.",
+        "text": "The equilibrium electron and hole concentrations in a semiconductor are given by:\n\n\\[ n_0 = N_c \\exp\\left( -\\frac{E_c - E_F}{kT} \\right) \\]\n\\[ p_0 = N_v \\exp\\left( -\\frac{E_F - E_v}{kT} \\right) \\]\n\nwhere $E_c$ is the conduction band edge, $E_v$ is the valence band edge, $E_F$ is the Fermi energy, $N_c$ and $N_v$ are the effective density of states in the conduction and valence bands respectively. The electron and hole concentrations can change by many orders of magnitude as the Fermi energy moves within the bandgap."
+    },
+    {
+        "question": "Determine the value of surface recombination velocity corresponding to the parameters given in Example 6.9.",
+        "text": "The surface recombination velocity $s$ relates the surface excess carrier concentration and the carrier flux at the surface. The relevant relation is:\n\n\\[ \\Delta p(x) = g\\Delta p_0 \\left[ 1 - \\frac{sL_p}{D_p + sL_p} e^{-x/L_p} \\right] \\]\n\nAt the surface ($x=0$), plugging in the values for $g\\Delta p_0, D_p, L_p$, and $\\Delta p(0)$, you can solve for $s$. This describes how efficiently excess carriers recombine at the surface, which is critical in device performance."
+    },
+    {
+        "question": "Determine, to a first approximation, the frequency at which the small-signal current gain decreases to $1/\\sqrt{2}$ of its low-frequency value. Consider the simplified hybrid-pi circuit.",
+        "text": "For a simplified hybrid-pi model, the current gain $A_i$ is:\n\n\\[ A_i = \\frac{h_{fe0}}{\\sqrt{1 + (2\\pi f r_b C_{bc})^2}} \\]\n\nThe gain falls to $1/\\sqrt{2}$ of its maximum value at the frequency:\n\n\\[ f = \\frac{1}{2\\pi r_b C_{bc}} \\]\n\nThis frequency is known as the -3dB bandwidth of the transistor and is a key metric in amplifier design."
+    },
+    {
+        "question": "Design the ratio of emitter doping to base doping in order to achieve an emitter injection efficiency factor of $\\gamma = 0.9967$. Consider an npn bipolar transistor. Assume, for simplicity, that $D_E = D_B$, $L_E = L_B$, and $x_E = x_B$.",
+        "text": "The emitter injection efficiency $\\gamma$ is:\n\n\\[ \\gamma = \\frac{1}{1 + \\frac{N_B}{N_E}} \\]\n\nTo achieve a high $\\gamma$, the emitter doping $N_E$ must be much larger than the base doping $N_B$. Substituting $\\gamma = 0.9967$ allows you to solve for the ratio $N_E / N_B$."
+    }
+]
